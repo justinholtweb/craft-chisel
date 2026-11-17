@@ -12,7 +12,11 @@ use CraftCms\Cms\Plugin\PluginSettings;
  */
 class Settings extends PluginSettings
 {
-    /** Allowed commands. One command name per line. Nothing runs unless it is listed here or in config/craft/chisel.php. */
+    /**
+     * Allowed commands. One command name per line. Nothing runs unless it is listed here or in config/craft/chisel.php.
+     *
+     * @var string|list<string>|null
+     */
     public string|array|null $allowedCommands = null;
 
     /** Run on the queue. Run commands as queued jobs with streamed output instead of in the request. */
