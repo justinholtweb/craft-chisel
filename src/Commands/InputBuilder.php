@@ -26,12 +26,22 @@ final class InputBuilder
 
     private readonly \Closure $translate;
 
+    private readonly CommandSpec $spec;
+
+    /** The command requires an input Chisel never accepts. */
+    private readonly bool $unusable;
+
     /**
      * @param  list<string>  $siteHandles  real site handles, for a `--site` option
      * @param  (callable(string, array<string, string|int>): string)|null  $translate  the CP translator; plain substitution by default
+     * @param  list<string>  $extraOptions  value options the config file allows for this command
      */
-    public function __construct(private readonly CommandSpec $spec, private readonly array $siteHandles, ?callable $translate = null)
+    public function __construct(CommandSpec $spec, private readonly array $siteHandles, ?callable $translate = null, array $extraOptions = [])
     {
+        // The option/argument policy is applied here too, whatever spec the caller passed.
+        $allowed = $spec->withPolicy($extraOptions);
+        $this->unusable = $allowed === null;
+        $this->spec = $allowed ?? new CommandSpec($spec->name, $spec->description, [], [], $spec->aliases);
         $this->translate = \Closure::fromCallable($translate ?? fn (string $m, array $p): string => strtr($m, array_combine(array_map(fn ($k) => '{'.$k.'}', array_keys($p)), array_map('strval', $p))));
     }
 
@@ -49,6 +59,11 @@ final class InputBuilder
     public function build(array $args, array $opts): ?array
     {
         $this->errors = [];
+        if ($this->unusable) {
+            $this->error('form', 'This command needs an input Chisel never accepts (code, a path or a credential).');
+
+            return null;
+        }
         $params = [];
         $display = [];
 
@@ -182,9 +197,15 @@ final class InputBuilder
      * only names the command defines, and Symfony must accept them.
      *
      * @param  array<array-key, mixed>  $params
+     * @param  list<string>  $extraOptions
      */
-    public static function paramsFit(CommandSpec $spec, array $params): bool
+    public static function paramsFit(CommandSpec $spec, array $params, array $extraOptions = []): bool
     {
+        $spec = $spec->withPolicy($extraOptions);
+        if ($spec === null) {
+            return false;
+        }
+
         $isArray = [];
         foreach ($spec->arguments as $a) {
             $isArray[$a['name']] = $a['array'];

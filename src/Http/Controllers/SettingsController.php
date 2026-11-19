@@ -54,7 +54,7 @@ class SettingsController
         $names = array_unique([...array_keys($this->catalog->all()), ...$allowed]);
         sort($names);
         foreach ($names as $name) {
-            $risk = CommandPolicy::classify($name);
+            $risk = $this->chisel->listedRisk($name);
             $group = str_contains($name, ':') ? substr($name, 0, (int) strrpos($name, ':')) : t('General', category: 'chisel');
             $groups[$group][] = [
                 'name' => $name,
@@ -125,7 +125,7 @@ class SettingsController
             $refused = [];
             $list = [];
             foreach (Settings::commandList(array_values(array_filter($names, 'is_string'))) as $name) {
-                if (in_array(CommandPolicy::classify($name), [CommandPolicy::FORBIDDEN, CommandPolicy::SENSITIVE], true)) {
+                if (in_array($this->chisel->listedRisk($name), [CommandPolicy::FORBIDDEN, CommandPolicy::SENSITIVE], true)) {
                     $refused[] = $name;
                 } else {
                     $list[] = $name;

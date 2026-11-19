@@ -45,6 +45,8 @@ final class CommandPolicy
         'passport:keys', 'passport:client', 'passport:install',
         // Install packages or run Composer.
         'craft:update', 'craft:update:composer-install',
+        // Internal plumbing that runs serialized code.
+        'invoke-serialized-closure', 'schedule:finish', '_complete',
     ];
 
     /** Name prefixes that never run: code generation and installers. */
@@ -79,11 +81,76 @@ final class CommandPolicy
     /** Words in a name that mean it removes or rewrites data in bulk. */
     private const string CONFIRM_WORDS = '/(^|[:\-])(delete|drop|flush|purge|prune|remove|reset|rollback|wipe|restore|uninstall|disable|repair|merge|cleanup|logout|interrupt|cancel)([:\-]|$)/';
 
+    /** Strictest first. */
+    private const array ORDER = [self::FORBIDDEN => 0, self::SENSITIVE => 1, self::CONFIRM => 2, self::NORMAL => 3];
+
+    /**
+     * Value options offered on every command: identifiers, filters and numbers. Anything else
+     * that takes a value (paths, URLs, hosts, PHP or template expressions, class names, file
+     * names…) is left off the form unless the config file's `allowedOptions` adds it for one
+     * command. Switches (no value) are offered unless forbidden below.
+     */
+    private const array SAFE_VALUE_OPTIONS = [
+        'site', 'status', 'limit', 'offset', 'batch-size', 'element-id', 'uid', 'section', 'type', 'field',
+        'owner-id', 'group', 'volume', 'with-fields', 'drafts', 'provisional-drafts', 'revisions',
+        'propagate-to', 'set-enabled-for-site', 'queue', 'chunk', 'max', 'max-revisions', 'hours', 'days',
+        'since', 'step', 'batch', 'isolated', 'tags', 'id', 'handle',
+    ];
+
+    /** Extra value options that are safe for one command. */
+    private const array COMMAND_OPTIONS = [
+        'down' => ['secret', 'retry', 'refresh'],
+    ];
+
+    /**
+     * Options never offered or accepted, on any command, whatever the config says: they evaluate
+     * PHP or templates (`craft:resave:* --set/--to`, `down --render`), take paths or file names,
+     * write files, reach the network, pick classes/seeders to run, or switch environment.
+     */
+    private const array FORBIDDEN_OPTIONS = [
+        'set', 'to', 'to-default', 'render', 'redirect', 'url', 'host', 'port', 'execute', 'env', 'class', 'seeder', 'seed',
+        'path', 'realpath', 'schema-path', 'file', 'filename', 'output', 'run-output-file', 'stub', 'template',
+        'uriformat', 'composer', 'shell', 'input', 'bootstrap', 'database', 'databases', 'connection', 'driver',
+        'key', 'cipher', 'token', 'password', 'username', 'email', 'admin', 'provider', 'force-path',
+    ];
+
+    /** Arguments never accepted: code, paths and credentials. A command that requires one can't run. */
+    private const array FORBIDDEN_ARGUMENTS = ['code', 'command', 'include', 'path', 'class', 'shell', 'password', 'value', 'config'];
+
     public static function classify(string $name): string
     {
-        $name = strtolower($name);
+        $variants = array_unique([strtolower($name), self::normalize($name)]);
 
-        if (in_array($name, self::FORBIDDEN_NAMES, true)) {
+        return self::strictest(array_map(self::classifyOne(...), $variants));
+    }
+
+    /**
+     * A command is as dangerous as its most dangerous name: canonical name and every alias.
+     *
+     * @param  list<string>  $names
+     */
+    public static function classifyAll(array $names): string
+    {
+        return self::strictest(array_map(self::classify(...), $names === [] ? [''] : $names));
+    }
+
+    /** `craft:users/setPassword` → `craft:users:set-password`, so alias spellings can't dodge a rule. */
+    public static function normalize(string $name): string
+    {
+        return strtolower((string) preg_replace('/([a-z0-9])([A-Z])/', '$1-$2', str_replace('/', ':', $name)));
+    }
+
+    /** @param  list<string>  $risks */
+    private static function strictest(array $risks): string
+    {
+        usort($risks, fn (string $a, string $b) => self::ORDER[$a] <=> self::ORDER[$b]);
+
+        return $risks[0] ?? self::FORBIDDEN;
+    }
+
+    private static function classifyOne(string $name): string
+    {
+        if ($name === '' || in_array($name, self::FORBIDDEN_NAMES, true)) {
             return self::FORBIDDEN;
         }
 
@@ -102,6 +169,35 @@ final class CommandPolicy
         }
 
         return self::NORMAL;
+    }
+
+    /**
+     * Whether an option may be offered and accepted.
+     *
+     * @param  array{name: string, value: string}  $option
+     * @param  list<string>  $extra  value options the config file adds for this command
+     */
+    public static function optionAllowed(string $command, array $option, array $extra = []): bool
+    {
+        $name = strtolower($option['name']);
+
+        if (in_array($name, self::FORBIDDEN_OPTIONS, true)) {
+            return false;
+        }
+
+        if ($option['value'] === 'none') {
+            return true;
+        }
+
+        return in_array($name, self::SAFE_VALUE_OPTIONS, true)
+            || in_array($name, self::COMMAND_OPTIONS[strtolower($command)] ?? [], true)
+            || in_array($name, array_map('strtolower', $extra), true);
+    }
+
+    /** @param  array{name: string}  $argument */
+    public static function argumentAllowed(array $argument): bool
+    {
+        return ! in_array(strtolower($argument['name']), self::FORBIDDEN_ARGUMENTS, true);
     }
 
     /** Command names Chisel will consider at all: lowercase words joined by `:`, `-`, `_` or `.`. */

@@ -25,20 +25,24 @@ final readonly class CommandSpec
     /**
      * @param  list<ArgumentSpec>  $arguments
      * @param  list<OptionSpec>  $options
+     * @param  list<string>  $aliases  every other name the command answers to (classified too)
      */
     public function __construct(
         public string $name,
         public string $description,
         public array $arguments,
         public array $options,
+        public array $aliases = [],
     ) {}
 
+    /** The command's canonical name and aliases; never the name it was looked up by. */
     public static function fromCommand(Command $command): self
     {
-        return self::fromDefinition((string) $command->getName(), $command->getDescription(), $command->getDefinition());
+        return self::fromDefinition((string) $command->getName(), $command->getDescription(), $command->getDefinition(), array_values(array_map('strval', $command->getAliases())));
     }
 
-    public static function fromDefinition(string $name, string $description, InputDefinition $definition): self
+    /** @param  list<string>  $aliases */
+    public static function fromDefinition(string $name, string $description, InputDefinition $definition, array $aliases = []): self
     {
         $arguments = [];
         foreach ($definition->getArguments() as $argument) {
@@ -70,7 +74,38 @@ final readonly class CommandSpec
             ];
         }
 
-        return new self($name, $description, $arguments, $options);
+        return new self($name, $description, $arguments, $options, $aliases);
+    }
+
+    /**
+     * The inputs Chisel offers and accepts for this command ({@see CommandPolicy::optionAllowed()}),
+     * or null when the command needs an input Chisel never accepts (a required path, code…).
+     *
+     * @param  list<string>  $extraOptions  value options the config file adds for this command
+     */
+    public function withPolicy(array $extraOptions = []): ?self
+    {
+        $arguments = [];
+        foreach ($this->arguments as $a) {
+            if (CommandPolicy::argumentAllowed($a)) {
+                $arguments[] = $a;
+            } elseif ($a['required']) {
+                return null;
+            } else {
+                // Positional: nothing after a dropped argument can be given either.
+                break;
+            }
+        }
+
+        $options = array_values(array_filter($this->options, fn (array $o) => CommandPolicy::optionAllowed($this->name, $o, $extraOptions)));
+
+        return new self($this->name, $this->description, $arguments, $options, $this->aliases);
+    }
+
+    /** @return list<string> the canonical name and every alias */
+    public function names(): array
+    {
+        return [$this->name, ...$this->aliases];
     }
 
     /** @param  array<array-key, mixed>  $data */
@@ -81,13 +116,15 @@ final readonly class CommandSpec
         /** @var list<OptionSpec> $options */
         $options = array_values(array_filter((array) ($data['options'] ?? []), 'is_array'));
 
-        return new self((string) ($data['name'] ?? ''), (string) ($data['description'] ?? ''), $arguments, $options);
+        $aliases = array_values(array_map('strval', array_filter((array) ($data['aliases'] ?? []), 'is_string')));
+
+        return new self((string) ($data['name'] ?? ''), (string) ($data['description'] ?? ''), $arguments, $options, $aliases);
     }
 
-    /** @return array{name: string, description: string, arguments: list<ArgumentSpec>, options: list<OptionSpec>} */
+    /** @return array{name: string, description: string, arguments: list<ArgumentSpec>, options: list<OptionSpec>, aliases: list<string>} */
     public function toArray(): array
     {
-        return ['name' => $this->name, 'description' => $this->description, 'arguments' => $this->arguments, 'options' => $this->options];
+        return ['name' => $this->name, 'description' => $this->description, 'arguments' => $this->arguments, 'options' => $this->options, 'aliases' => $this->aliases];
     }
 
     /** Rebuild a Symfony definition, so submitted input can be bound and validated by Symfony itself. */

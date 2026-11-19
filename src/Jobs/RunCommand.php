@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Log;
 use JustinHoltWeb\Chisel\Chisel;
 use JustinHoltWeb\Chisel\Commands\Catalog;
+use JustinHoltWeb\Chisel\Commands\CommandPolicy;
 use JustinHoltWeb\Chisel\Commands\InputBuilder;
 use JustinHoltWeb\Chisel\Models\Run;
 use JustinHoltWeb\Chisel\Runs\OutputSanitizer;
@@ -63,20 +64,26 @@ class RunCommand implements ShouldQueue
             return;
         }
 
-        // A fresh signature list before checking, so a command removed since is refused.
-        if (($at = $catalog->refreshedAt()) === null || $at->lt(now()->subMinutes(5))) {
-            rescue(fn () => $catalog->refresh(), report: false);
-        }
+        // Always a fresh signature list first, so the checks see the commands that exist now.
+        rescue(fn () => $catalog->refresh(), report: false);
 
         $refusal = $chisel->disabledReason()
             ?? $chisel->commandRefusal($run->command)
             ?? ($chisel->userMayStillRun($run->userId, $run->command) ? null : t('The person who queued this can no longer run it.', category: 'chisel'));
 
+        // The command that will actually run: looked up by exact name, and it must be that
+        // command's canonical name (not an alias or abbreviation), classified with every alias.
+        $live = $artisan->all()[$run->command] ?? null;
+        if ($refusal === null && ($live === null || $live->getName() !== $run->command
+            || CommandPolicy::classifyAll([(string) $live->getName(), ...array_map('strval', $live->getAliases())]) !== $chisel->risk($run->command))) {
+            $refusal = t('`{name}` doesn’t resolve to the command that was approved.', ['name' => $run->command], category: 'chisel');
+        }
+
         $params = $this->parameters($run);
         $spec = $catalog->get($run->command);
 
-        if ($refusal === null && ($params === null || $spec === null || ! InputBuilder::paramsFit($spec, $params))) {
-            $refusal = t('The command’s signature changed since this run was queued. Queue it again.', category: 'chisel');
+        if ($refusal === null && ($params === null || $spec === null || ! InputBuilder::paramsFit($spec, $params, $chisel->extraOptions($run->command)))) {
+            $refusal = t('These inputs aren’t accepted for this command (any more). Queue it again from its form.', category: 'chisel');
         }
 
         if ($refusal !== null) {

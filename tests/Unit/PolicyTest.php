@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use JustinHoltWeb\Chisel\Commands\CommandPolicy;
+use JustinHoltWeb\Chisel\Http\Controllers\RunsController;
 use JustinHoltWeb\Chisel\Settings;
 
 it('forbids shells, workers, destroyers and credential printers', function (string $name) {
@@ -47,4 +48,49 @@ it('normalises the allowlist', function () {
     expect(Settings::commandList("Cache:Clear\n inspire ,inspire\nbad name;x"))->toBe(['cache:clear', 'inspire', 'bad', 'name;x'] === [] ? [] : ['cache:clear', 'inspire', 'bad'])
         ->and(Settings::commandList(['migrate:status', 42, null, 'x y']))->toBe(['migrate:status'])
         ->and(Settings::commandList(null))->toBe([]);
+});
+
+it('neutralises spreadsheet formulas in the CSV export', function () {
+    expect(RunsController::csvCell('=HYPERLINK("x")'))->toBe("'=HYPERLINK(\"x\")")
+        ->and(RunsController::csvCell('-v'))->toBe("'-v")
+        ->and(RunsController::csvCell('inspire'))->toBe('inspire')
+        ->and(RunsController::csvCell(null))->toBe('');
+});
+
+it('classifies a command by its strictest name or alias', function () {
+    expect(CommandPolicy::classifyAll(['craft:db:restore', 'craft:restore', 'craft:restore:db']))->toBe(CommandPolicy::FORBIDDEN)
+        ->and(CommandPolicy::classifyAll(['harmless:thing', 'craft:db:restore']))->toBe(CommandPolicy::FORBIDDEN)
+        ->and(CommandPolicy::classifyAll(['craft:project-config:set', 'craft:pc:set']))->toBe(CommandPolicy::SENSITIVE)
+        ->and(CommandPolicy::classifyAll(['inspire']))->toBe(CommandPolicy::NORMAL)
+        ->and(CommandPolicy::classifyAll([]))->toBe(CommandPolicy::FORBIDDEN);
+});
+
+it('sees through slash and camelCase alias spellings', function () {
+    expect(CommandPolicy::classify('craft:users/setPassword'))->toBe(CommandPolicy::FORBIDDEN)
+        ->and(CommandPolicy::classify('craft:users/impersonate'))->toBe(CommandPolicy::FORBIDDEN)
+        ->and(CommandPolicy::classify('craft:project-config/set'))->toBe(CommandPolicy::SENSITIVE)
+        ->and(CommandPolicy::normalize('craft:users/setPassword'))->toBe('craft:users:set-password');
+});
+
+it('forbids internal plumbing that runs serialized code', function () {
+    expect(CommandPolicy::classify('invoke-serialized-closure'))->toBe(CommandPolicy::FORBIDDEN)
+        ->and(CommandPolicy::classify('schedule:finish'))->toBe(CommandPolicy::FORBIDDEN);
+});
+
+it('allowlists value options; forbids code, path and network options everywhere', function () {
+    $v = fn (string $n) => ['name' => $n, 'value' => 'required'];
+    expect(CommandPolicy::optionAllowed('craft:resave:entries', $v('section')))->toBeTrue()
+        ->and(CommandPolicy::optionAllowed('craft:resave:entries', $v('set')))->toBeFalse()
+        ->and(CommandPolicy::optionAllowed('craft:resave:entries', $v('to')))->toBeFalse()
+        ->and(CommandPolicy::optionAllowed('craft:resave:entries', $v('to'), ['to']))->toBeFalse()
+        ->and(CommandPolicy::optionAllowed('down', $v('render')))->toBeFalse()
+        ->and(CommandPolicy::optionAllowed('down', $v('secret')))->toBeTrue()
+        ->and(CommandPolicy::optionAllowed('migrate', $v('path')))->toBeFalse()
+        ->and(CommandPolicy::optionAllowed('migrate', ['name' => 'seed', 'value' => 'none']))->toBeFalse()
+        ->and(CommandPolicy::optionAllowed('migrate', ['name' => 'pretend', 'value' => 'none']))->toBeTrue()
+        ->and(CommandPolicy::optionAllowed('cashier:webhook', $v('url')))->toBeFalse()
+        ->and(CommandPolicy::optionAllowed('x', $v('whatever')))->toBeFalse()
+        ->and(CommandPolicy::optionAllowed('x', $v('whatever'), ['whatever']))->toBeTrue()
+        ->and(CommandPolicy::argumentAllowed(['name' => 'path']))->toBeFalse()
+        ->and(CommandPolicy::argumentAllowed(['name' => 'handle']))->toBeTrue();
 });

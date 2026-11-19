@@ -18,7 +18,10 @@ function probeSpec(): CommandSpec
         new InputOption('times', null, InputOption::VALUE_REQUIRED, 'Times', '1'),
         new InputOption('tag', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Tags'),
         new InputOption('loud', null, InputOption::VALUE_NONE, 'Shout'),
-        new InputOption('password', null, InputOption::VALUE_REQUIRED, 'A secret'),
+        new InputOption('api-token', null, InputOption::VALUE_REQUIRED, 'A secret'),
+        new InputOption('set', null, InputOption::VALUE_REQUIRED, 'Attribute'),
+        new InputOption('to', null, InputOption::VALUE_REQUIRED, 'Value (evaluated)'),
+        new InputOption('path', null, InputOption::VALUE_REQUIRED, 'A path'),
         new InputOption('no-interaction', 'n', InputOption::VALUE_NONE, 'global'),
         new InputOption('env', null, InputOption::VALUE_REQUIRED, 'global'),
     ]));
@@ -26,14 +29,14 @@ function probeSpec(): CommandSpec
 
 it('captures a signature without the global options', function () {
     $spec = probeSpec();
-    expect(array_column($spec->options, 'name'))->toBe(['site', 'times', 'tag', 'loud', 'password'])
+    expect(array_column($spec->options, 'name'))->toBe(['site', 'times', 'tag', 'loud', 'api-token', 'set', 'to', 'path'])
         ->and($spec->arguments[0])->toMatchArray(['name' => 'word', 'required' => true, 'array' => false])
         ->and($spec->option('times')['default'])->toBe('1')
         ->and(CommandSpec::fromArray(json_decode(json_encode($spec->toArray()), true)))->toEqual($spec);
 });
 
 it('builds Artisan parameters from form input', function () {
-    $b = new InputBuilder(probeSpec(), ['default', 'fr']);
+    $b = new InputBuilder(probeSpec(), ['default', 'fr'], null, ['times', 'tag']);
     $built = $b->build(['word' => 'hello; rm -rf /', 'extra' => "a\n\nb"], ['site' => 'fr', 'tag' => "x\ny", 'loud' => '1', 'times' => '']);
 
     expect($b->errors)->toBe([])
@@ -49,7 +52,7 @@ it('ignores inputs the command does not define, including global options', funct
 });
 
 it('refuses unknown sites, missing arguments and malformed values', function () {
-    $b = new InputBuilder(probeSpec(), ['default']);
+    $b = new InputBuilder(probeSpec(), ['default'], null, ['tag']);
     expect($b->build([], ['site' => 'nope']))->toBeNull()
         ->and($b->errors)->toHaveKeys(['args.word', 'opts.site']);
 
@@ -62,10 +65,10 @@ it('refuses unknown sites, missing arguments and malformed values', function () 
 });
 
 it('masks sensitive values in the display line only', function () {
-    $built = new InputBuilder(probeSpec(), [])->build(['word' => 'x'], ['password' => 'hunter2']);
+    $built = new InputBuilder(probeSpec(), [], null, ['api-token'])->build(['word' => 'x'], ['api-token' => 'hunter2']);
 
-    expect($built['params']['--password'])->toBe('hunter2')
-        ->and($built['display'])->toBe(['x', '--password=••••']);
+    expect($built['params']['--api-token'])->toBe('hunter2')
+        ->and($built['display'])->toBe(['x', '--api-token=••••']);
 });
 
 it('rechecks stored parameters against the current signature', function () {
@@ -73,7 +76,11 @@ it('rechecks stored parameters against the current signature', function () {
     expect(InputBuilder::paramsFit($spec, ['word' => 'x', '--loud' => true]))->toBeTrue()
         ->and(InputBuilder::paramsFit($spec, ['word' => 'x', '--env' => 'production']))->toBeFalse()
         ->and(InputBuilder::paramsFit($spec, ['--loud' => true]))->toBeFalse()
-        ->and(InputBuilder::paramsFit($spec, ['word' => ['a']]))->toBeFalse();
+        ->and(InputBuilder::paramsFit($spec, ['word' => ['a']]))->toBeFalse()
+        ->and(InputBuilder::paramsFit($spec, ['word' => 'x', '--set' => 'title', '--to' => '=1+1']))->toBeFalse()
+        ->and(InputBuilder::paramsFit($spec, ['word' => 'x', '--times' => '2']))->toBeFalse()
+        ->and(InputBuilder::paramsFit($spec, ['word' => 'x', '--times' => '2'], ['times']))->toBeTrue()
+        ->and(InputBuilder::paramsFit($spec, ['word' => 'x', '--to' => 'x'], ['to']))->toBeFalse();
 });
 
 it('reads a real command', function () {
@@ -81,4 +88,30 @@ it('reads a real command', function () {
     $command->setDescription('Does a thing')->addArgument('name', InputArgument::OPTIONAL, 'Name', 'bob');
     expect(CommandSpec::fromCommand($command)->toArray())->toMatchArray(['name' => 'demo:thing', 'description' => 'Does a thing'])
         ->and(CommandSpec::fromCommand($command)->arguments[0]['default'])->toBe('bob');
+});
+
+it('never offers or accepts options that evaluate code, take paths or are not allowlisted', function () {
+    $spec = probeSpec()->withPolicy(['times', 'set', 'to', 'path']);
+    expect(array_column($spec->options, 'name'))->toBe(['site', 'times', 'loud']);
+
+    $built = new InputBuilder(probeSpec(), [])->build(['word' => 'x'], ['set' => 'title', 'to' => '=1+1', 'path' => '/etc', 'times' => '9', 'tag' => 'a']);
+    expect($built['params'])->toBe(['word' => 'x']);
+});
+
+it('refuses a command whose required argument Chisel never accepts', function () {
+    $spec = CommandSpec::fromDefinition('craft:env:set', '', new InputDefinition([
+        new InputArgument('name', InputArgument::REQUIRED), new InputArgument('value', InputArgument::REQUIRED),
+    ]));
+    expect($spec->withPolicy())->toBeNull();
+
+    $b = new InputBuilder($spec, []);
+    expect($b->build(['name' => 'X', 'value' => 'y'], []))->toBeNull()->and($b->errors)->toHaveKey('form');
+});
+
+it('keeps aliases with the canonical name', function () {
+    $command = new Command('craft:project-config:set');
+    $command->setAliases(['craft:pc:set', 'craft:project-config/set']);
+    $spec = CommandSpec::fromCommand($command);
+    expect($spec->names())->toBe(['craft:project-config:set', 'craft:pc:set', 'craft:project-config/set'])
+        ->and(CommandSpec::fromArray($spec->toArray())->aliases)->toBe(['craft:pc:set', 'craft:project-config/set']);
 });

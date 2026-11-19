@@ -46,12 +46,12 @@ class CommandsController
             if (! $this->chisel->canRun($user, $name)) {
                 continue;
             }
-            $spec = $this->catalog->get($name);
+            $spec = $this->chisel->spec($name);
             $last = $this->history->lastRun($name, $this->chisel->canViewHistory($user) ? null : $user->getCraftUserId());
             $commands[] = [
                 'name' => $name,
                 'description' => $spec->description ?? '',
-                'risk' => CommandPolicy::classify($name),
+                'risk' => $this->chisel->risk($name),
                 'url' => cp_url('chisel/commands/'.$name),
                 'last' => $last ? ['status' => $last->status, 'label' => self::statusLabel($last->status), 'url' => cp_url('chisel/runs/'.$last->id), 'when' => $last->created_at?->diffForHumans()] : null,
             ];
@@ -96,7 +96,7 @@ class CommandsController
             'spec' => $spec,
             'fields' => $this->fields($spec, $request),
             'errors' => $errors->toArray(),
-            'risk' => CommandPolicy::classify($spec->name),
+            'risk' => $this->chisel->risk($spec->name),
             'action' => cp_url('chisel/commands/'.$spec->name),
             'recent' => $recent,
             'canHistory' => $this->chisel->canViewHistory($user),
@@ -122,11 +122,11 @@ class CommandsController
             }
         }
 
-        if (CommandPolicy::classify($spec->name) === CommandPolicy::CONFIRM && $request->input('confirm') !== $spec->name) {
+        if ($this->chisel->risk($spec->name) === CommandPolicy::CONFIRM && $request->input('confirm') !== $spec->name) {
             return $keep(redirect($back))->withErrors(['confirm' => t('Type “{name}” to confirm.', ['name' => $spec->name], category: 'chisel')]);
         }
 
-        $builder = new InputBuilder($spec, $this->siteHandles(), fn (string $m, array $p) => t($m, $p, category: 'chisel'));
+        $builder = new InputBuilder($spec, $this->siteHandles(), fn (string $m, array $p) => t($m, $p, category: 'chisel'), $this->chisel->extraOptions($spec->name));
         $args = $request->input('args', []);
         $opts = $request->input('opts', []);
         $built = $builder->build(is_array($args) ? $args : [], is_array($opts) ? $opts : []);
@@ -176,11 +176,10 @@ class CommandsController
     /** The command, if it's allowlisted, available here and this person may run it; else 404/403. */
     private function runnableSpec(CraftUser $user, string $name): CommandSpec
     {
-        $name = strtolower($name);
         abort_if($this->chisel->commandRefusal($name) !== null, 404);
         abort_unless($this->chisel->canRun($user, $name), 403);
 
-        return $this->catalog->get($name) ?? abort(404);
+        return $this->chisel->spec($name) ?? abort(404);
     }
 
     /** @return list<string> */

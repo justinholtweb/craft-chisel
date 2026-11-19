@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Session;
 use JustinHoltWeb\Chisel\Commands\Catalog;
 use JustinHoltWeb\Chisel\Commands\CommandPolicy;
+use JustinHoltWeb\Chisel\Commands\CommandSpec;
 
 use function CraftCms\Cms\t;
 
@@ -30,6 +31,9 @@ use function CraftCms\Cms\t;
  *   accounts/plugins, allowed only by being listed here.
  * - `requireAdmin` (default true): only admins. When false, people with the Chisel
  *   permissions can use it too.
+ * - `allowedOptions` (default []): `['command' => ['option', …]]`, value options to offer
+ *   beyond the safe built-in list. Never re-enables a forbidden option.
+ * - `elevationSeconds` (default 300): how long a password confirmation lasts.
  * - `queue` (default `chisel`) / `connection` (default: the app's default).
  */
 class Chisel
@@ -113,17 +117,61 @@ class Chisel
     }
 
     /**
-     * Why a command can't be run, or null when it can (permissions aside).
+     * How dangerous a command is: its canonical name and every alias it answers to are
+     * classified, and the strictest wins. Unknown names are forbidden.
+     */
+    public function risk(string $name): string
+    {
+        $spec = $this->catalog->get($name);
+
+        return $spec === null ? CommandPolicy::FORBIDDEN : CommandPolicy::classifyAll($spec->names());
+    }
+
+    /** For the allowlist editor: a known command's {@see risk()}, else its name's own class. */
+    public function listedRisk(string $name): string
+    {
+        return $this->catalog->get($name) !== null ? $this->risk($name) : CommandPolicy::classify($name);
+    }
+
+    /**
+     * Value options the config file's `allowedOptions` adds for one command.
+     *
+     * @return list<string>
+     */
+    public function extraOptions(string $name): array
+    {
+        $all = self::config('allowedOptions', []);
+        $list = is_array($all) ? ($all[$name] ?? []) : [];
+
+        return is_array($list) ? array_values(array_filter($list, 'is_string')) : [];
+    }
+
+    /** The command's signature as Chisel offers it (policy applied), or null. */
+    public function spec(string $name): ?CommandSpec
+    {
+        return $this->catalog->get($name)?->withPolicy($this->extraOptions($name));
+    }
+
+    /**
+     * Why a command can't be run, or null when it can (permissions aside). Names are exact
+     * canonical names: an alias, abbreviation or different case is not a command here.
      */
     public function commandRefusal(string $name): ?string
     {
-        $name = strtolower($name);
-
         if (! CommandPolicy::isValidName($name)) {
             return t('That isn’t a command name.', category: 'chisel');
         }
 
-        $risk = CommandPolicy::classify($name);
+        if (CommandPolicy::classify($name) === CommandPolicy::FORBIDDEN) {
+            return t('`{name}` can never be run from the control panel.', ['name' => $name], category: 'chisel');
+        }
+
+        $spec = $this->catalog->get($name);
+        if ($spec === null) {
+            return t('`{name}` isn’t a command on this install (aliases and abbreviations don’t count; the command list may need refreshing).', ['name' => $name], category: 'chisel');
+        }
+
+        $risk = CommandPolicy::classifyAll($spec->names());
 
         if ($risk === CommandPolicy::FORBIDDEN) {
             return t('`{name}` can never be run from the control panel.', ['name' => $name], category: 'chisel');
@@ -137,8 +185,8 @@ class Chisel
             return t('`{name}` isn’t on the allowlist.', ['name' => $name], category: 'chisel');
         }
 
-        if ($this->catalog->get($name) === null) {
-            return t('`{name}` isn’t a command on this install (or the command list needs refreshing).', ['name' => $name], category: 'chisel');
+        if ($this->spec($name) === null) {
+            return t('`{name}` needs an input Chisel never accepts (code, a path or a credential).', ['name' => $name], category: 'chisel');
         }
 
         return null;

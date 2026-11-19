@@ -36,8 +36,10 @@ class Catalog
 
         $now = now();
         $rows = [];
-        foreach ($this->artisan->all() as $name => $command) {
-            $name = strtolower((string) $name);
+        // all() is keyed by every name *and alias*; store each command once, under its canonical
+        // name, with its aliases kept for classification only.
+        foreach ($this->artisan->all() as $command) {
+            $name = (string) $command->getName();
             if (! CommandPolicy::isValidName($name) || $command->isHidden() || isset($rows[$name])) {
                 continue;
             }
@@ -78,9 +80,10 @@ class Catalog
         return $this->specs;
     }
 
+    /** Exact canonical name only: never an alias, a different case or an abbreviation. */
     public function get(string $name): ?CommandSpec
     {
-        return $this->all()[strtolower($name)] ?? null;
+        return $this->all()[$name] ?? null;
     }
 
     public function refreshedAt(): ?CarbonImmutable
