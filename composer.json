@@ -67,7 +67,7 @@
         "handle": "chisel",
         "developer": "Justin Holt",
         "developerUrl": "https://justinholt.com",
-        "documentationUrl": "https://github.com/justinholtweb/craft-chisel",
+        "documentationUrl": "https://justinholt.com/plugins/craft-chisel/docs",
         "changelogUrl": "https://raw.githubusercontent.com/justinholtweb/craft-chisel/main/CHANGELOG.md",
         "class": "JustinHoltWeb\\Chisel\\Plugin"
     }
