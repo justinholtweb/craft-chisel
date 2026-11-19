@@ -1,0 +1,24 @@
+{# One run, followed live by resources/js/chisel.js until it finishes. #}
+<div class="grid gap-4" id="chisel-run" data-chisel-run="{{ run.id }}" data-poll-url="{{ pollUrl }}" data-finished="{{ finished ? 1 : 0 }}" data-length="{{ output|length }}">
+  <table class="cp-table cp-table--aligned">
+    <tbody>
+      <tr><th class="light">{{ 'Command'|t('chisel') }}</th><td><code id="chisel-command-line">{{ run.commandLine }}</code></td></tr>
+      <tr><th class="light">{{ 'Status'|t('chisel') }}</th><td><span id="chisel-status" class="chisel-status chisel-status--{{ run.status }}">{{ run.statusLabel }}</span></td></tr>
+      <tr><th class="light">{{ 'Exit code'|t('chisel') }}</th><td id="chisel-exit-code">{{ run.exitCode ?? '—' }}</td></tr>
+      <tr><th class="light">{{ 'By'|t('chisel') }}</th><td>{{ run.username ?? '—' }}</td></tr>
+      <tr><th class="light">{{ 'Queued'|t('chisel') }}</th><td><time datetime="{{ run.created }}">{{ run.created }}</time></td></tr>
+      <tr><th class="light">{{ 'Took'|t('chisel') }}</th><td id="chisel-duration">{{ run.durationMs is not null ? (run.durationMs / 1000)|number_format(2) ~ ' s' : '—' }}</td></tr>
+    </tbody>
+  </table>
+
+  <p class="error" id="chisel-error"{% if not error %} hidden{% endif %}>{{ error }}</p>
+
+  <p class="text-quiet smalltext" id="chisel-waiting"{% if run.status != 'pending' %} hidden{% endif %}>
+    {{ 'Waiting for a queue worker. Chisel’s jobs run on the `{queue}` queue: `php artisan queue:work --queue={queue}`.'|t('chisel', {queue: queue}) }}
+  </p>
+
+  <pre class="chisel-output" id="chisel-output" tabindex="0" aria-live="polite">{{ output }}</pre>
+  <p class="text-quiet smalltext" id="chisel-truncated"{% if not truncated %} hidden{% endif %}>{{ 'Output was cut off at the size limit.'|t('chisel') }}</p>
+
+  {% if againUrl %}<div><a class="btn" href="{{ againUrl }}">{{ 'Run again…'|t('chisel') }}</a></div>{% endif %}
+</div>

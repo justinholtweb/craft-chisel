@@ -1,0 +1,26 @@
+<table class="cp-table cp-table--aligned chisel-runs" id="chisel-runs">
+  <thead>
+    <tr>
+      <th class="cell">#</th>
+      <th class="cell">{{ 'Command'|t('chisel') }}</th>
+      <th class="cell">{{ 'Status'|t('chisel') }}</th>
+      <th class="cell">{{ 'Exit code'|t('chisel') }}</th>
+      <th class="cell">{{ 'By'|t('chisel') }}</th>
+      <th class="cell">{{ 'Queued'|t('chisel') }}</th>
+      <th class="cell">{{ 'Took'|t('chisel') }}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in runs %}
+      <tr data-run="{{ r.id }}" data-status="{{ r.status }}">
+        <td class="cell"><a href="{{ r.url }}">{{ r.id }}</a></td>
+        <td class="cell"><code>{{ r.commandLine }}</code></td>
+        <td class="cell"><span class="chisel-status chisel-status--{{ r.status }}">{{ r.statusLabel }}</span></td>
+        <td class="cell">{{ r.exitCode ?? '—' }}</td>
+        <td class="cell">{{ r.username ?? '—' }}</td>
+        <td class="cell"><time datetime="{{ r.created }}" title="{{ r.created }}">{{ r.createdHuman }}</time></td>
+        <td class="cell">{{ r.durationMs is not null ? (r.durationMs / 1000)|number_format(1) ~ ' s' : '—' }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>

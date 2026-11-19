@@ -1,0 +1,56 @@
+{# Chisel → Commands #}
+<div class="grid gap-6">
+  {% if queueShared %}
+    <craft-callout variant="danger" id="chisel-queue-shared">{{ 'Chisel’s queue (`{queue}`) is one Craft also runs from web requests, where most commands don’t exist. Set `queue` in `config/craft/chisel.php` to a queue only your worker runs.'|t('chisel', {queue: queue}) }}</craft-callout>
+  {% endif %}
+
+  {% if catalogEmpty %}
+    <craft-callout variant="warning" id="chisel-catalog-empty">
+      {{ 'Chisel hasn’t read the command list yet. It does that in the queue worker: run `php artisan craft:chisel:refresh`, or refresh below and make sure a worker runs the `{queue}` queue.'|t('chisel', {queue: queue}) }}
+    </craft-callout>
+  {% endif %}
+
+  {{ include('chisel/_elevation') }}
+
+  {% if commands is empty %}
+    <p id="chisel-none">{{ 'There are no commands you can run yet. An admin adds them in Chisel → Settings.'|t('chisel') }}</p>
+  {% else %}
+    <table class="cp-table cp-table--aligned" id="chisel-commands">
+      <thead>
+        <tr>
+          <th class="cell">{{ 'Command'|t('chisel') }}</th>
+          <th class="cell">{{ 'Description'|t('chisel') }}</th>
+          <th class="cell">{{ 'Last run'|t('chisel') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in commands %}
+          <tr data-command="{{ c.name }}">
+            <th class="cell"><a href="{{ c.url }}"><code>{{ c.name }}</code></a>
+              {% if c.risk == 'confirm' %}<craft-badge fill="orange" title="{{ 'Asks you to type its name before it runs.'|t('chisel') }}">{{ 'Confirm'|t('chisel') }}</craft-badge>{% endif %}
+              {% if c.risk == 'sensitive' %}<craft-badge fill="red">{{ 'Sensitive'|t('chisel') }}</craft-badge>{% endif %}
+            </th>
+            <td class="cell">{{ c.description }}</td>
+            <td class="cell">{% if c.last %}<a href="{{ c.last.url }}" class="chisel-status chisel-status--{{ c.last.status }}">{{ c.last.label }}</a> <span class="text-quiet">{{ c.last.when }}</span>{% else %}—{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  {% if unavailable is not empty %}
+    <div id="chisel-unavailable">
+      <h2 class="cp-h2 mb-3">{{ 'Allowlisted but not available'|t('chisel') }}</h2>
+      <ul class="chisel-list">
+        {% for u in unavailable %}<li data-command="{{ u.name }}"><code>{{ u.name }}</code> — {{ u.reason }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <div class="flex items-center gap-2 text-quiet smalltext">
+    <span id="chisel-catalog-at">{% if catalogAt %}{{ 'Command list read {when}.'|t('chisel', {when: catalogAt.diffForHumans()}) }}{% else %}{{ 'Command list not read yet.'|t('chisel') }}{% endif %}</span>
+    {% if canRun %}
+      <form method="post" action="{{ refreshUrl }}">{{ csrf_field() }}<button type="submit" class="btn small">{{ 'Refresh'|t('chisel') }}</button></form>
+    {% endif %}
+  </div>
+</div>

@@ -1,0 +1,24 @@
+{# Password re-entry. Inside a form (fields only) when `inline`, else its own form. #}
+{% if not elevated %}
+  {% set field %}
+    {{ craft.cp.field(craft.cp.password({name: 'password', id: 'chisel-password', autocomplete: 'current-password'}), {
+      label: 'Your password'|t('chisel'),
+      instructions: 'Running commands needs your password again. It stays confirmed for {minutes, plural, =1{a minute} other{# minutes}}.'|t('chisel', {minutes: (elevationSeconds ?? 300) // 60}),
+      id: 'chisel-password',
+      errors: errors.password ?? [],
+    })|raw }}
+    {% if lockedOut %}<p class="error" id="chisel-locked">{{ 'Too many wrong passwords. Try again in a minute.'|t('chisel') }}</p>{% endif %}
+  {% endset %}
+  {% if inline ?? false %}
+    <div id="chisel-elevation">{{ field }}</div>
+  {% else %}
+    <form method="post" action="{{ elevateUrl }}" id="chisel-elevation" class="chisel-box">
+      {{ csrf_field() }}
+      <input type="hidden" name="return" value="{{ return ?? '' }}">
+      {{ field }}
+      <button type="submit" class="btn">{{ 'Confirm password'|t('chisel') }}</button>
+    </form>
+  {% endif %}
+{% else %}
+  <p class="text-quiet smalltext" id="chisel-elevated" data-remaining="{{ elevationRemaining }}">{{ 'Password confirmed for {minutes, plural, =1{about a minute} other{# more minutes}}.'|t('chisel', {minutes: max(1, elevationRemaining // 60)}) }}</p>
+{% endif %}

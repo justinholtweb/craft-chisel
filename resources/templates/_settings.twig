@@ -1,0 +1,68 @@
+{# Chisel → Settings (admins; saving needs the password again) #}
+<form method="post" action="{{ action }}" class="grid gap-6" id="chisel-settings" autocomplete="off">
+  {{ csrf_field() }}
+  {% if readOnly %}
+    <craft-callout variant="warning" id="chisel-readonly">{{ 'Admin changes are off in this environment, so these settings can’t be changed here.'|t('chisel') }}</craft-callout>
+  {% endif %}
+
+  <div id="chisel-allowlist">
+    <h2 class="cp-h2 mb-3">{{ 'Allowed commands'|t('chisel') }}</h2>
+    {% if allowlistFromConfig %}
+      <craft-callout id="chisel-allowlist-config">{{ 'The allowlist is set by `allowedCommands` in `config/craft/chisel.php`.'|t('chisel') }}</craft-callout>
+    {% else %}
+      <p class="text-quiet mb-3">{{ 'Nothing runs unless it’s ticked here. Forbidden commands (shells, workers, destroying data or keys, printing credentials, writing code) never run. Sensitive ones (they reveal configuration or manage accounts and plugins) can only be allowed with `sensitiveCommands` in `config/craft/chisel.php`. “Confirm” commands ask for their name to be typed before running.'|t('chisel') }}</p>
+    {% endif %}
+    {% if errors.allowedCommands ?? false %}<p class="error" id="chisel-allowlist-error">{{ errors.allowedCommands|join(' ') }}</p>{% endif %}
+    {% if groups is empty %}
+      <p id="chisel-catalog-empty">{{ 'Chisel hasn’t read the command list yet (Commands → Refresh, or `php artisan craft:chisel:refresh`).'|t('chisel') }}</p>
+    {% endif %}
+    {% for group, commands in groups %}
+      <details class="chisel-group" {% if commands|filter(c => c.checked)|length %}open{% endif %}>
+        <summary><strong>{{ group }}</strong> <span class="text-quiet">({{ commands|filter(c => c.checked)|length }}/{{ commands|length }})</span></summary>
+        <table class="cp-table cp-table--aligned">
+          <tbody>
+            {% for c in commands %}
+              <tr data-command="{{ c.name }}" data-risk="{{ c.risk }}">
+                <td class="cell thin">
+                  <input type="checkbox" class="checkbox" name="allowedCommands[]" value="{{ c.name }}" id="chisel-allow-{{ loop.parent.loop.index }}-{{ loop.index }}"
+                    {% if c.checked %}checked{% endif %} {% if c.disabled or allowlistFromConfig or readOnly %}disabled{% endif %}>
+                </td>
+                <th class="cell"><label for="chisel-allow-{{ loop.parent.loop.index }}-{{ loop.index }}"><code>{{ c.name }}</code></label>
+                  {% if c.risk == 'forbidden' %}<craft-badge fill="red">{{ 'Forbidden'|t('chisel') }}</craft-badge>
+                  {% elseif c.risk == 'sensitive' %}<craft-badge fill="red">{{ 'Sensitive: config file only'|t('chisel') }}</craft-badge>
+                  {% elseif c.risk == 'confirm' %}<craft-badge fill="orange">{{ 'Confirm'|t('chisel') }}</craft-badge>{% endif %}
+                  {% if c.suggested %}<craft-badge fill="green">{{ 'Common'|t('chisel') }}</craft-badge>{% endif %}
+                </th>
+                <td class="cell text-quiet">{{ c.description }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
+    {% endfor %}
+  </div>
+
+  <div class="grid gap-4" id="chisel-general">
+    <h2 class="cp-h2">{{ 'History and runs'|t('chisel') }}</h2>
+    {{ craft.cp.field(craft.cp.text({name: 'historyRetentionDays', type: 'number', value: values.historyRetentionDays, disabled: 'historyRetentionDays' in fromConfig or readOnly, size: 6}), {label: 'Keep runs for (days)'|t('chisel'), instructions: 'Older runs and their output are deleted daily. 0 keeps them forever.'|t('chisel'), errors: errors.historyRetentionDays ?? []})|raw }}
+    {{ craft.cp.field(craft.cp.text({name: 'maxOutputKb', type: 'number', value: values.maxOutputKb, disabled: 'maxOutputKb' in fromConfig or readOnly, size: 6}), {label: 'Output kept per run (KB)'|t('chisel'), errors: errors.maxOutputKb ?? []})|raw }}
+    {{ craft.cp.field(craft.cp.text({name: 'timeout', type: 'number', value: values.timeout, disabled: 'timeout' in fromConfig or readOnly, size: 6}), {label: 'Time limit (seconds)'|t('chisel'), instructions: 'The queue worker stops a command that runs longer. Keep it below your worker’s own `--timeout`.'|t('chisel'), errors: errors.timeout ?? []})|raw }}
+
+    <h2 class="cp-h2">{{ 'Sidebar'|t('chisel') }}</h2>
+    {{ craft.cp.field(craft.cp.lightswitch({name: 'showInCpNav', on: values.showInCpNav, value: '1', disabled: 'showInCpNav' in fromConfig or readOnly}), {label: 'Show in the sidebar'|t('chisel')})|raw }}
+    {{ craft.cp.field(craft.cp.text({name: 'cpNavLabel', value: values.cpNavLabel, placeholder: 'Chisel', disabled: 'cpNavLabel' in fromConfig or readOnly}), {label: 'Sidebar label'|t('chisel'), errors: errors.cpNavLabel ?? []})|raw }}
+    {{ craft.cp.field(craft.cp.text({name: 'cpNavIcon', value: values.cpNavIcon, placeholder: 'terminal', class: 'code', disabled: 'cpNavIcon' in fromConfig or readOnly}), {label: 'Sidebar icon'|t('chisel'), instructions: 'A Craft icon name (e.g. `terminal`) or `set:name` from a custom icon set. Leave blank for Chisel’s icon.'|t('chisel'), errors: errors.cpNavIcon ?? []})|raw }}
+  </div>
+
+  <div class="grid gap-2 text-quiet smalltext" id="chisel-config-only">
+    <h2 class="cp-h2">{{ 'Config file only'|t('chisel') }}</h2>
+    <p>{{ 'Only admins can use Chisel: {value}.'|t('chisel', {value: requireAdmin ? 'yes'|t('chisel') : 'no (people with the Chisel permissions can too)'|t('chisel')}) }}</p>
+    <p>{{ 'Sensitive commands allowed: {value}.'|t('chisel', {value: sensitive is empty ? 'none'|t('chisel') : sensitive|join(', ')}) }}</p>
+    <p>{{ 'Queue: `{queue}`.'|t('chisel', {queue: queue}) }}</p>
+  </div>
+
+  {% if not readOnly %}
+    {{ include('chisel/_elevation', {inline: true}) }}
+    <div><button type="submit" class="btn submit" id="chisel-save">{{ 'Save'|t('chisel') }}</button></div>
+  {% endif %}
+</form>

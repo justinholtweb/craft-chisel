@@ -1,0 +1,46 @@
+{# Chisel → Commands → one command's form #}
+<div class="grid gap-6">
+  {% if spec.description %}<p id="chisel-description">{{ spec.description }}</p>{% endif %}
+
+  <form method="post" action="{{ action }}" id="chisel-run-form" class="grid gap-4" autocomplete="off">
+    {{ csrf_field() }}
+    {% if errors.form ?? false %}<craft-callout variant="danger">{{ errors.form|join(' ') }}</craft-callout>{% endif %}
+
+    {% for f in fields %}
+      {% set fieldErrors = errors[f.input] ?? [] %}
+      {% if f.kind == 'switch' %}
+        {{ craft.cp.field(craft.cp.lightswitch({name: f.name, on: f.value, value: '1'}), {label: f.label, instructions: f.description, errors: fieldErrors})|raw }}
+      {% elseif f.kind == 'select' %}
+        {{ craft.cp.field(craft.cp.select({name: f.name, options: f.options, value: f.value}), {label: f.label, instructions: f.description, errors: fieldErrors})|raw }}
+      {% elseif f.kind == 'textarea' %}
+        {{ craft.cp.field(craft.cp.textarea({name: f.name, value: f.value, rows: 3, class: 'code'}), {label: f.label, instructions: f.description, required: f.required, errors: fieldErrors})|raw }}
+      {% else %}
+        {{ craft.cp.field(craft.cp.text({name: f.name, value: f.value, class: 'code'}), {label: f.label, instructions: f.description, required: f.required, errors: fieldErrors})|raw }}
+      {% endif %}
+    {% else %}
+      <p class="text-quiet">{{ 'This command takes no input.'|t('chisel') }}</p>
+    {% endfor %}
+
+    {% if risk == 'confirm' %}
+      {{ craft.cp.field(craft.cp.text({name: 'confirm', id: 'chisel-confirm', class: 'code', autocomplete: 'off'}), {
+        label: 'Type “{name}” to confirm'|t('chisel', {name: spec.name}),
+        instructions: 'This command changes or removes data in bulk, or takes the site down.'|t('chisel'),
+        id: 'chisel-confirm',
+        errors: errors.confirm ?? [],
+      })|raw }}
+    {% endif %}
+
+    {{ include('chisel/_elevation', {inline: true}) }}
+
+    <div>
+      <button type="submit" class="btn submit" id="chisel-run">{{ 'Run on the queue'|t('chisel') }}</button>
+    </div>
+  </form>
+
+  {% if recent is not empty %}
+    <div>
+      <h2 class="cp-h2 mb-3">{{ 'Recent runs'|t('chisel') }}</h2>
+      {{ include('chisel/_runs-table', {runs: recent}) }}
+    </div>
+  {% endif %}
+</div>

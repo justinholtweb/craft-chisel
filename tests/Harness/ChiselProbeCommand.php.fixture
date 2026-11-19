@@ -1,0 +1,59 @@
+<?php
+
+namespace App\Console;
+
+use Illuminate\Console\Command;
+use RuntimeException;
+
+/**
+ * Harness-only command for Chisel's checks (craft-chisel/tests/Harness). Copied to
+ * app/Console/ChiselProbeCommand.php and registered in AppServiceProvider.
+ */
+class ChiselProbeCommand extends Command
+{
+    protected $signature = 'chisel:probe
+        {word : A word to echo}
+        {extra?* : More words}
+        {--site= : A site handle}
+        {--times=1 : How many times to echo}
+        {--tag=* : Tags to echo}
+        {--loud : Shout}
+        {--leak : Print the app key and other secrets, to test masking}
+        {--fail : Exit with code 3}
+        {--throw : Throw an exception}
+        {--sleep=0 : Seconds to wait between lines}';
+
+    protected $description = 'Chisel harness probe: echoes its input.';
+
+    public function handle(): int
+    {
+        if ($this->option('throw')) {
+            throw new RuntimeException('Probe exploded with APP_KEY='.config('app.key'));
+        }
+
+        $word = (string) $this->argument('word');
+        $word = $this->option('loud') ? strtoupper($word) : $word;
+        for ($i = 0; $i < max(1, (int) $this->option('times')); $i++) {
+            $this->line("<info>word:</info> {$word}");
+            if ((int) $this->option('sleep') > 0) {
+                sleep((int) $this->option('sleep'));
+            }
+        }
+        $this->line('extra: '.implode('|', (array) $this->argument('extra')));
+        $this->line('site: '.($this->option('site') ?? '-'));
+        $this->line('tags: '.implode('|', (array) $this->option('tag')));
+        $this->line('interactive: '.($this->input->isInteractive() ? 'yes' : 'no'));
+
+        if ($this->option('leak')) {
+            $this->line('key raw: '.config('app.key'));
+            $this->line('APP_KEY='.config('app.key'));
+            $this->line('dsn: mysql://root:hunter2hunter2@db/craft');
+            $this->line('Authorization: Bearer abcdef0123456789abcdef');
+            $this->line('stripe sk_live_0123456789abcdefABCDEF');
+            $this->line('scout key: '.config('scout.meilisearch.key'));
+            $this->line("\e[31mred\e[0m done");
+        }
+
+        return $this->option('fail') ? 3 : self::SUCCESS;
+    }
+}

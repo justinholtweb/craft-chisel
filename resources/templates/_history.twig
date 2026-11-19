@@ -1,0 +1,20 @@
+{# Chisel → History #}
+<div class="grid gap-4">
+  <form method="get" action="{{ actionUrl }}" class="flex items-end gap-2 flex-wrap" id="chisel-history-filter">
+    {{ craft.cp.field(craft.cp.select({name: 'status', value: status ?? '', options: [{label: 'All statuses'|t('chisel'), value: ''}]|merge(statuses)}), {label: 'Status'|t('chisel')})|raw }}
+    {{ craft.cp.field(craft.cp.text({name: 'command', value: command ?? '', class: 'code', placeholder: 'craft:clear-caches:all'}), {label: 'Command'|t('chisel')})|raw }}
+    <button type="submit" class="btn">{{ 'Filter'|t('chisel') }}</button>
+    <a class="btn" href="{{ exportUrl }}" id="chisel-export">{{ 'Export CSV'|t('chisel') }}</a>
+  </form>
+
+  {% if runs is empty %}
+    <p id="chisel-history-empty">{{ 'No runs yet.'|t('chisel') }}</p>
+  {% else %}
+    <p class="text-quiet smalltext" id="chisel-history-total" data-total="{{ total }}">{{ '{total, plural, =1{One run} other{# runs}}'|t('chisel', {total: total}) }}</p>
+    {{ include('chisel/_runs-table') }}
+    <div class="flex gap-2">
+      {% if prevUrl %}<a class="btn small" href="{{ prevUrl }}">{{ 'Newer'|t('chisel') }}</a>{% endif %}
+      {% if nextUrl %}<a class="btn small" href="{{ nextUrl }}">{{ 'Older'|t('chisel') }}</a>{% endif %}
+    </div>
+  {% endif %}
+</div>
