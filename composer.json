@@ -59,6 +59,7 @@
         "sort-packages": true
     },
     "support": {
+        "docs": "https://justinholt.com/plugins/craft-chisel/docs",
         "issues": "https://github.com/justinholtweb/craft-chisel/issues",
         "source": "https://github.com/justinholtweb/craft-chisel"
     },
